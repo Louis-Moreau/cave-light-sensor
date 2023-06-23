@@ -3,34 +3,42 @@
 #![no_std]
 #![feature(type_alias_impl_trait)]
 
-
-use panic_halt as _;
+use panic_abort as _;
 
 use rtic::app;
-use nb::block;
 use rtic_monotonics::systick::*;
-use stm32l0xx_hal::gpio::{Output,OpenDrain, PushPull};
 use stm32l0xx_hal::gpio::gpiob::*;
-use stm32l0xx_hal::prelude::*;
+use stm32l0xx_hal::gpio::{OpenDrain, Output, PushPull};
 use stm32l0xx_hal::i2c::I2c;
-use stm32l0xx_hal::rcc::Config;
 use stm32l0xx_hal::pac::I2C1;
-use opt300x::{Opt300x};
-use opt300x::ic::Opt3001;
-use opt300x::mode::OneShot;
+use stm32l0xx_hal::{
+    exti::{Exti, ExtiLine, GpioLine, TriggerEdge},
+    gpio::*,
+    prelude::*,
+    rcc::Config,
+    syscfg::SYSCFG,
+};
+
+use opt300x::{ic::Opt3001, FaultCount, Opt300x};
+
+const GPIO_LINE: u8 = 0;
 
 #[app(device = stm32l0xx_hal::pac, peripherals = true)]
 mod app {
     use super::*;
 
     #[shared]
-    struct Shared {}
+    struct Shared {
+        speedy: bool,
+    }
 
     #[local]
     struct Local {
         led: PB3<Output<PushPull>>,
         state: bool,
-        sensor : Opt300x<I2c<I2C1, PB7<Output<OpenDrain>>, PB6<Output<OpenDrain>>>, Opt3001, OneShot>
+        interrupt_pin: PB0<Input<Floating>>,
+        sensor:
+        Opt300x<I2c<I2C1, PB7<Output<OpenDrain>>, PB6<Output<OpenDrain>>>, Opt3001, opt300x::mode::Continuous>,
     }
 
     #[init]
@@ -47,42 +55,98 @@ mod app {
 
         let sda = gpiob.pb7.into_open_drain_output();
         let scl = gpiob.pb6.into_open_drain_output();
-        let i2c = cx.device.I2C1.i2c(sda, scl, embedded_time::rate::units::Hertz(100_000), &mut rcc);
+
+        let interrupt_pin = gpiob.pb0.into_floating_input();
+        let mut syscfg = SYSCFG::new(cx.device.SYSCFG, &mut rcc);
+        let mut exti = Exti::new(cx.device.EXTI);
+
+        let i2c = cx.device.I2C1.i2c(
+            sda,
+            scl,
+            embedded_time::rate::units::Hertz(100_000),
+            &mut rcc,
+        );
         let sensor = Opt300x::new_opt3001(i2c, opt300x::SlaveAddr::Alternative(false, false));
+        let mut sensor: Opt300x<I2c<I2C1, PB7<Output<OpenDrain>>, PB6<Output<OpenDrain>>>, Opt3001, opt300x::mode::Continuous> = sensor.into_continuous().ok().unwrap();
 
+        setup_sensor(&mut sensor);
 
-        let mut led = gpiob
-            .pb3
-            .into_push_pull_output();
+        let linef = GpioLine::from_raw_line(GPIO_LINE).unwrap();
+        exti.listen_gpio(
+            &mut syscfg,
+            interrupt_pin.port(),
+            linef,
+            TriggerEdge::Both,
+        );
+
+        let mut led = gpiob.pb3.into_push_pull_output();
         led.set_high().unwrap();
 
         // Schedule the blinking task
         blink::spawn().ok();
-        read_sensor::spawn().ok();
+        let speedy = false;
 
-        (Shared {}, Local { led, state: false , sensor })
+        (
+            Shared { speedy },
+            Local {
+                interrupt_pin,
+                led,
+                state: false,
+                sensor,
+            },
+        )
     }
 
-    #[task(local = [led, state])]
-    async fn blink(cx: blink::Context) {
+    #[task(local = [led, state], shared = [speedy])]
+    async fn blink(mut ctx: blink::Context) {
         loop {
-            if *cx.local.state {
-                cx.local.led.set_high().unwrap();
-                *cx.local.state = false;
+            if *ctx.local.state {
+                ctx.local.led.set_high().unwrap();
+                *ctx.local.state = false;
             } else {
-                cx.local.led.set_low().unwrap();
-                *cx.local.state = true;
+                ctx.local.led.set_low().unwrap();
+                *ctx.local.state = true;
             }
-            Systick::delay(100.millis()).await;
+            let delay: u32 = ctx
+                .shared
+                .speedy
+                .lock(|speedy| if *speedy { 100 } else { 1000 });
+
+            Systick::delay(delay.millis()).await;
         }
     }
 
-    #[task(local = [sensor])]
-    async fn read_sensor(cx: read_sensor::Context) {
-        loop {
-            let l = block!(cx.local.sensor.read_lux()).unwrap().result;
-            let value = l as u32;
-            Systick::delay(1000.millis()).await;
+    #[task(binds = EXTI0_1, local = [interrupt_pin], shared = [speedy])]
+    fn exti0_1(mut ctx: exti0_1::Context) {
+       if Exti::is_pending(GpioLine::from_raw_line(GPIO_LINE).unwrap()) {
+            let state = ctx.local.interrupt_pin.is_low().unwrap();
+            ctx.shared.speedy.lock(|speedy| {
+                *speedy = state;
+            });
+            Exti::unpend(GpioLine::from_raw_line(GPIO_LINE).unwrap());
         }
+    }
+
+    fn setup_sensor(
+        sensor: &mut Opt300x<I2c<I2C1, PB7<Output<OpenDrain>>, PB6<Output<OpenDrain>>>, Opt3001, opt300x::mode::Continuous>
+    ) {
+        // Set the comparison mode to Lacthed window instead of Hysterersis
+        sensor
+            .set_comparison_mode(opt300x::ComparisonMode::TransparentHysteresis)
+            .unwrap();
+
+        // We use a pullup resistor so LOW is active
+        sensor
+            .set_interrupt_pin_polarity(opt300x::InterruptPinPolarity::Low)
+            .unwrap();
+
+        // Number of "positive" read that are necessary to activate an interrupt
+        sensor.set_fault_count(FaultCount::Four).unwrap();
+
+        // exponent = 0b1011 for max range (83k lux) and 20.48lux resolution
+        // 488 * 20.48lux = ~10k lux
+        // The interrupt is activated at 10k lux and deactivated at 5k lux
+        sensor.set_high_limit_raw(0b1001u8, 488u16).unwrap();
+        sensor.set_low_limit_raw(0b1001u8, 244u16).unwrap();
     }
 }
