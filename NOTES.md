@@ -1,9 +1,9 @@
 
 ```
-sudo service udev restart
-sudo service udev stop
-sudo udevadm control --reload-rules
-sudo service udev stop
+sudo service udev restart && \
+sudo service udev stop && \
+sudo udevadm control --reload-rules && \
+sudo service udev stop && \
 sudo service udev start
 ```
 

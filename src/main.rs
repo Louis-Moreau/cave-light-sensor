@@ -3,37 +3,30 @@
 #![no_std]
 #![feature(type_alias_impl_trait)]
 
+
 use panic_abort as _;
-use rtt_target::{rtt_init_print, rprintln};
 
+mod light_sensor;
+mod eeprom;
+use light_sensor::*;
+use eeprom::*;
 
+use rtt_target::{rprintln, rtt_init_print};
+use eeprom24x::{Eeprom24x, SlaveAddr};
+use opt300x::Opt300x;
 use rtic::app;
 use rtic_monotonics::systick::*;
-use stm32l0xx_hal::gpio::gpiob::*;
-use stm32l0xx_hal::gpio::{OpenDrain, Output, PushPull};
+use stm32l0xx_hal::gpio::{*,{OpenDrain, Output, PushPull,gpiob::*}};
 use stm32l0xx_hal::i2c::I2c;
 use stm32l0xx_hal::pac::I2C1;
 use stm32l0xx_hal::{
     exti::{Exti, ExtiLine, GpioLine, TriggerEdge},
-    gpio::*,
     prelude::*,
     rcc::Config,
     syscfg::SYSCFG,
 };
 
-use opt300x::{ic::Opt3001, FaultCount, Opt300x};
-
 const GPIO_LINE: u8 = 0;
-
-
-const MANTISSA_MAX: u16 = 0xFFF ;
-const MANTISSA_MIN: u16 = 0;
-const EXPONENT_MAX: u8 = 0b1011 ;
-const EXPONENT_MIN: u8 = 0;
-
-const EXPONENT_THRESHOLD : u8 = 0b1001u8;
-const MANTISSA_THRESHOLD : u16 = 488u16;
-
 
 #[app(device = stm32l0xx_hal::pac, peripherals = true)]
 mod app {
@@ -49,8 +42,8 @@ mod app {
         led: PB3<Output<PushPull>>,
         state: bool,
         interrupt_pin: PB0<Input<Floating>>,
-        sensor:
-        Opt300x<I2c<I2C1, PB7<Output<OpenDrain>>, PB6<Output<OpenDrain>>>, Opt3001, opt300x::mode::Continuous>,
+        sensor: light_sensor::MyOpt3001,
+        eeprom: MyEeprom,
     }
 
     #[init]
@@ -78,8 +71,14 @@ mod app {
             embedded_time::rate::units::Hertz(100_000),
             &mut rcc,
         );
-        let sensor = Opt300x::new_opt3001(i2c, opt300x::SlaveAddr::Alternative(false, false));
-        let mut sensor: Opt300x<I2c<I2C1, PB7<Output<OpenDrain>>, PB6<Output<OpenDrain>>>, Opt3001, opt300x::mode::Continuous> = sensor.into_continuous().ok().unwrap();
+
+        let shared_i2c  = shared_bus::new_cortexm!(I2c<I2C1, PB7<Output<OpenDrain>>, PB6<Output<OpenDrain>>> = i2c).unwrap();
+        let mut eeprom = Eeprom24x::new_24x256(shared_i2c.acquire_i2c(), SlaveAddr::default());
+        let sensor = Opt300x::new_opt3001(
+            shared_i2c.acquire_i2c(),
+            opt300x::SlaveAddr::Alternative(false, false),
+        );
+        let mut sensor = sensor.into_continuous().ok().unwrap();
 
         setup_sensor(&mut sensor);
 
@@ -105,6 +104,7 @@ mod app {
                 led,
                 state: false,
                 sensor,
+                eeprom,
             },
         )
     }
@@ -130,8 +130,8 @@ mod app {
 
     #[task(binds = EXTI0_1, local = [interrupt_pin,sensor], shared = [speedy])]
     fn exti0_1(mut ctx: exti0_1::Context) {
-       if Exti::is_pending(GpioLine::from_raw_line(GPIO_LINE).unwrap()) {
-            let mut light : bool = false;
+        if Exti::is_pending(GpioLine::from_raw_line(GPIO_LINE).unwrap()) {
+            let mut light: bool = false;
 
             let status = ctx.local.sensor.read_status().unwrap();
             if status.was_too_high {
@@ -143,54 +143,15 @@ mod app {
                 light = false;
                 rprintln!("LOW");
             }
-            
+
             ctx.shared.speedy.lock(|speedy| {
                 *speedy = light;
             });
             Exti::unpend(GpioLine::from_raw_line(GPIO_LINE).unwrap());
 
-            
             //rprintln!("status {:?}", status);
             //let value = ctx.local.sensor.read_lux().unwrap();
             //rprintln!("value {:?}", value as u32);
         }
     }
-
-    fn setup_sensor(
-        sensor: &mut OPT3001Sensor
-    ) {
-        // Set the comparison mode to Lacthed window instead of Hysterersis
-        sensor
-            .set_comparison_mode(opt300x::ComparisonMode::LatchedWindow)
-            .unwrap();
-
-        // We use a pullup resistor so LOW is active
-        sensor
-            .set_interrupt_pin_polarity(opt300x::InterruptPinPolarity::Low)
-            .unwrap();
-
-        // Number of "positive" read that are necessary to activate an interrupt
-        sensor.set_fault_count(FaultCount::One).unwrap();
-
-        // exponent = 0b1011 for max range (83k lux) and 20.48lux resolution
-        // 488 * 20.48lux = ~10k lux
-        // The interrupt is activated at 10k lux and deactivated at 5k lux
-        //sensor.set_high_limit_raw(0b1001u8, 488u16).unwrap();
-        //sensor.set_low_limit_raw(0b1001u8, 244u16).unwrap();
-        sensor.set_integration_time(opt300x::IntegrationTime::Ms800).unwrap();
-
-        wait_for_light(sensor,MANTISSA_THRESHOLD,EXPONENT_THRESHOLD);
-    }
-
-    fn wait_for_dark(sensor : &mut OPT3001Sensor,mantissa : u16,exponent : u8) {
-        sensor.set_high_limit_raw(EXPONENT_MAX, MANTISSA_MAX).unwrap();
-        sensor.set_low_limit_raw(exponent, mantissa).unwrap();
-    }
-
-    fn wait_for_light(sensor : &mut OPT3001Sensor,mantissa : u16,exponent : u8) {
-        sensor.set_high_limit_raw(exponent, mantissa).unwrap();
-        sensor.set_low_limit_raw(EXPONENT_MIN, MANTISSA_MIN).unwrap();
-    }
-
-    type OPT3001Sensor = Opt300x<I2c<I2C1, PB7<Output<OpenDrain>>, PB6<Output<OpenDrain>>>, Opt3001, opt300x::mode::Continuous>;
 }
