@@ -8,6 +8,7 @@ use panic_abort as _;
 
 mod light_sensor;
 mod eeprom;
+mod rtc;
 use light_sensor::*;
 use eeprom::*;
 
@@ -24,12 +25,17 @@ use stm32l0xx_hal::{
     prelude::*,
     rcc::Config,
     syscfg::SYSCFG,
+    rtc::Rtc,
+    pwr::PWR
 };
 
 const GPIO_LINE: u8 = 0;
+const ZERO_TIME: u64 = 978307200;
 
 #[app(device = stm32l0xx_hal::pac, peripherals = true)]
 mod app {
+    use eeprom24x::page_size::No;
+
     use super::*;
 
     #[shared]
@@ -44,12 +50,15 @@ mod app {
         interrupt_pin: PB0<Input<Floating>>,
         sensor: light_sensor::MyOpt3001,
         eeprom: MyEeprom,
+        rtc : Rtc
     }
 
     #[init]
     fn init(cx: init::Context) -> (Shared, Local) {
         // Setup clocks
         let mut rcc = cx.device.RCC.freeze(Config::hsi16());
+
+        let pwr = PWR::new(cx.device.PWR,&mut rcc);
 
         // Initialize the systick interrupt & obtain the token to prove that we did
         let systick_mono_token = rtic_monotonics::create_systick_token!();
@@ -61,10 +70,6 @@ mod app {
         let sda = gpiob.pb7.into_open_drain_output();
         let scl = gpiob.pb6.into_open_drain_output();
 
-        let interrupt_pin = gpiob.pb0.into_floating_input();
-        let mut syscfg = SYSCFG::new(cx.device.SYSCFG, &mut rcc);
-        let mut exti = Exti::new(cx.device.EXTI);
-
         let i2c = cx.device.I2C1.i2c(
             sda,
             scl,
@@ -73,7 +78,8 @@ mod app {
         );
 
         let shared_i2c  = shared_bus::new_cortexm!(I2c<I2C1, PB7<Output<OpenDrain>>, PB6<Output<OpenDrain>>> = i2c).unwrap();
-        let mut eeprom = Eeprom24x::new_24x256(shared_i2c.acquire_i2c(), SlaveAddr::default());
+        let eeprom = Eeprom24x::new_24x256(shared_i2c.acquire_i2c(), SlaveAddr::default());
+
         let sensor = Opt300x::new_opt3001(
             shared_i2c.acquire_i2c(),
             opt300x::SlaveAddr::Alternative(false, false),
@@ -82,11 +88,18 @@ mod app {
 
         setup_sensor(&mut sensor);
 
-        let linef = GpioLine::from_raw_line(GPIO_LINE).unwrap();
+        let mut rtc = Rtc::new(cx.device.RTC, &mut rcc, &pwr, None).unwrap();
+
+
+
+        let interrupt_pin = gpiob.pb0.into_floating_input();
+        let mut syscfg = SYSCFG::new(cx.device.SYSCFG, &mut rcc);
+        let mut exti = Exti::new(cx.device.EXTI);
+
         exti.listen_gpio(
             &mut syscfg,
             interrupt_pin.port(),
-            linef,
+            GpioLine::from_raw_line(interrupt_pin.pin_number()).unwrap(),
             TriggerEdge::Falling,
         );
 
@@ -105,6 +118,7 @@ mod app {
                 state: false,
                 sensor,
                 eeprom,
+                rtc
             },
         )
     }
@@ -128,8 +142,9 @@ mod app {
         }
     }
 
-    #[task(binds = EXTI0_1, local = [interrupt_pin,sensor], shared = [speedy])]
+    #[task(binds = EXTI0_1, local = [interrupt_pin,sensor,eeprom,rtc], shared = [speedy])]
     fn exti0_1(mut ctx: exti0_1::Context) {
+
         if Exti::is_pending(GpioLine::from_raw_line(GPIO_LINE).unwrap()) {
             let mut light: bool = false;
 
@@ -138,11 +153,15 @@ mod app {
                 wait_for_dark(ctx.local.sensor, MANTISSA_THRESHOLD, EXPONENT_THRESHOLD);
                 light = true;
                 rprintln!("HIGH");
+                increment_stored_count(ctx.local.eeprom);
             } else if status.was_too_low {
                 wait_for_light(ctx.local.sensor, MANTISSA_THRESHOLD, EXPONENT_THRESHOLD);
                 light = false;
                 rprintln!("LOW");
+                increment_stored_count(ctx.local.eeprom);
             }
+            let now = ctx.local.rtc.now().timestamp() as u64 - ZERO_TIME;
+            rprintln!("time : {}",now);
 
             ctx.shared.speedy.lock(|speedy| {
                 *speedy = light;

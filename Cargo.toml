@@ -14,19 +14,18 @@ rtic-monotonics = { version = "1.0.0", features = ["cortex-m-systick"]}
 stm32l0xx-hal = { version = "0.10.0", features = [ "mcu-STM32L011K4Tx"] }
 opt300x = "0.1.1"
 embedded-time = "0.12.1"
-#nb = "1.1.0"
+nb = "1.1.0"
 panic-abort = "0.3.2"
 eeprom24x = "0.5.0"
 shared-bus = { version = "0.2.5", features = ["cortex-m"]}
 serde = { version = "1.0.171", default-features = false }
 postcard = "1.0.4"
+chrono = { version = "0.4.26", default-features = false }
 
 
 [profile.dev]
-opt-level = 1
-strip = true
+opt-level = 's'
 debug = false
-split-debuginfo = 'off'  # Platform-specific.
 debug-assertions = false
 overflow-checks = false
 lto = true

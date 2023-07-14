@@ -36,16 +36,18 @@ pub fn setup_sensor(sensor: &mut MyOpt3001) {
     // Number of "positive" read that are necessary to activate an interrupt
     sensor.set_fault_count(FaultCount::One).unwrap();
 
-    // exponent = 0b1011 for max range (83k lux) and 20.48lux resolution
-    // 488 * 20.48lux = ~10k lux
-    // The interrupt is activated at 10k lux and deactivated at 5k lux
-    //sensor.set_high_limit_raw(0b1001u8, 488u16).unwrap();
-    //sensor.set_low_limit_raw(0b1001u8, 244u16).unwrap();
+
     sensor
         .set_integration_time(opt300x::IntegrationTime::Ms800)
         .unwrap();
 
+    //Reset flag and interrupt in case the MCU had a reset when while the sensor had an interrupt
+    let _ = sensor.read_status();
+
+
     wait_for_light(sensor, MANTISSA_THRESHOLD, EXPONENT_THRESHOLD);
+
+
 }
 
 pub fn wait_for_dark(sensor: &mut MyOpt3001, mantissa: u16, exponent: u8) {
