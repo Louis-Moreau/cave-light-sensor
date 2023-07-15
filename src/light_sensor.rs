@@ -36,7 +36,6 @@ pub fn setup_sensor(sensor: &mut MyOpt3001) {
     // Number of "positive" read that are necessary to activate an interrupt
     sensor.set_fault_count(FaultCount::One).unwrap();
 
-
     sensor
         .set_integration_time(opt300x::IntegrationTime::Ms800)
         .unwrap();
@@ -44,10 +43,7 @@ pub fn setup_sensor(sensor: &mut MyOpt3001) {
     //Reset flag and interrupt in case the MCU had a reset when while the sensor had an interrupt
     let _ = sensor.read_status();
 
-
     wait_for_light(sensor, MANTISSA_THRESHOLD, EXPONENT_THRESHOLD);
-
-
 }
 
 pub fn wait_for_dark(sensor: &mut MyOpt3001, mantissa: u16, exponent: u8) {

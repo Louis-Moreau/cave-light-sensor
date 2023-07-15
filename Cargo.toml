@@ -21,6 +21,7 @@ shared-bus = { version = "0.2.5", features = ["cortex-m"]}
 serde = { version = "1.0.171", default-features = false }
 postcard = "1.0.4"
 chrono = { version = "0.4.26", default-features = false }
+ufmt = "0.2.0"
 
 
 [profile.dev]
