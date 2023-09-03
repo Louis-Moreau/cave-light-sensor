@@ -30,6 +30,7 @@ use stm32l0xx_hal::{
     rtc::Rtc,
     syscfg::SYSCFG,
 };
+use core::fmt::Write;
 
 const GPIO_LINE: u8 = 0;
 const ZERO_TIME: u64 = 978307200;
@@ -64,9 +65,23 @@ mod app {
         // Initialize the systick interrupt & obtain the token to prove that we did
         let systick_mono_token = rtic_monotonics::create_systick_token!();
         Systick::start(cx.core.SYST, 16_000_000, systick_mono_token); // default STM32F303 clock-rate is 36MHz
-        rtt_init_print!();
+        //rtt_init_print!();
         // Setup LED
         let gpiob = cx.device.GPIOB.split(&mut rcc);
+        let gpioa = cx.device.GPIOA.split(&mut rcc);
+
+        let tx_pin = gpioa.pa9;
+        let rx_pin = gpioa.pa10;
+
+        let serial = cx.device
+        .USART2
+        .usart(tx_pin, rx_pin, stm32l0xx_hal::serial::Config::default(), &mut rcc)
+        .unwrap();
+
+        let (mut tx, mut rx) = serial.split();
+
+        writeln!(tx, "Hello, world!\n").unwrap();
+
 
         let sda = gpiob.pb7.into_open_drain_output();
         let scl = gpiob.pb6.into_open_drain_output();

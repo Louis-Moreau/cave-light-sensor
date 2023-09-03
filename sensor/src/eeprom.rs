@@ -8,7 +8,7 @@ use stm32l0xx_hal::gpio::{OpenDrain, Output};
 use stm32l0xx_hal::i2c::I2c;
 use stm32l0xx_hal::pac::I2C1;
 
-use crate::rtc::{Event, EventType};
+use link_lib::{Event, EventType};
 
 pub type MyEeprom = Eeprom24x<
     shared_bus::I2cProxy<
