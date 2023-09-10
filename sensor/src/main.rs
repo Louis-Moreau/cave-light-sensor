@@ -70,11 +70,11 @@ mod app {
         let gpiob = cx.device.GPIOB.split(&mut rcc);
         let gpioa = cx.device.GPIOA.split(&mut rcc);
 
-        let tx_pin = gpioa.pa9;
-        let rx_pin = gpioa.pa10;
+        let tx_pin = gpioa.pa1;
+        let rx_pin = gpioa.pa3;
 
         let serial = cx.device
-        .USART2
+        .LPUART1
         .usart(tx_pin, rx_pin, stm32l0xx_hal::serial::Config::default(), &mut rcc)
         .unwrap();
 
