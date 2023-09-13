@@ -1,30 +1,76 @@
-use std::io::{Read,Write};
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+mod serial;
+// import the prelude to get access to the `rsx!` macro and the `Scope` and `Element` types
 
-use clap::{Args, Parser, Subcommand};
+use eframe::egui;
+use serialport::SerialPortInfo;
 
-#[derive(Parser)]
-#[command(author, version, about, long_about = None)]
-#[command(propagate_version = true)]
-struct Cli {
-    #[command(subcommand)]
-    command: Commands,
-}
+fn main() -> Result<(), eframe::Error> {
+    env_logger::init(); // Log to stderr (if you run with `RUST_LOG=debug`).
 
-#[derive(Subcommand)]
-enum Commands {
-    GetNumberOfEvent,
-    ExtractData,
-    ClearMemory,
-    CompareTime,
-    All
-}
+    let options = eframe::NativeOptions {
+        resizable: true,
+        initial_window_size: Some(egui::vec2(1600.0, 900.0)),
+        ..Default::default()
+    };
 
+    // Our application state:
+    let mut selected_serial: Option<SerialPortInfo> = None;
+    let mut baud_rate: u64 = 9600;
+    let mut vec_serial: Vec<SerialPortInfo> = match serialport::available_ports() {
+        Ok(v) => v,
+        Err(_) => Vec::new(),
+    };
 
+    eframe::run_simple_native("Sensor data extractor", options, move |ctx, _frame| {
+        ctx.set_pixels_per_point(2f32);
+        egui::CentralPanel::default().show(ctx, |ui| {
+            ui.heading("Sensor data extractor");
 
+            ui.horizontal(|ui| {
+                egui::ComboBox::from_label("Serial Port")
+                    .selected_text(format!(
+                        "{}",
+                        selected_serial
+                            .clone()
+                            .map_or("None".to_string(), |v| v.port_name.clone())
+                    ))
+                    .show_ui(ui, |ui| {
+                        ui.style_mut().wrap = Some(false);
+                        ui.set_min_width(100.0);
+                        ui.selectable_value(&mut selected_serial, None, "None");
+                        for port in &vec_serial {
+                            ui.selectable_value(
+                                &mut selected_serial,
+                                Some(port.clone()),
+                                &port.port_name,
+                            );
+                        }
+                    });
 
-fn main() {
-    println!("Hello, world!");
-    let cli = Cli::parse();
-    let mut serial = serialport::new("/dev/ttyUSB0", 9600).open_native().expect("Failed to open port");
-    serial.read();
+                if ui.button("Refresh").clicked() {
+                    vec_serial = match serialport::available_ports() {
+                        Ok(v) => v,
+                        Err(_) => Vec::new(),
+                    }
+                }
+            });
+
+            egui::ComboBox::from_label("Baud rate")
+                .selected_text(format!("{baud_rate:?}"))
+                .show_ui(ui, |ui| {
+                    ui.style_mut().wrap = Some(false);
+                    ui.set_min_width(60.0);
+                    ui.selectable_value(&mut baud_rate, 9600, "9600");
+                    ui.selectable_value(&mut baud_rate, 4800, "4800");
+                    ui.selectable_value(&mut baud_rate, 2400, "2400");
+                    ui.selectable_value(&mut baud_rate, 1200, "1200");
+                });
+
+            ui.group(|ui| {
+                ui.set_enabled(selected_serial.is_some());
+                if ui.button("Connect").clicked() {}
+            });
+        });
+    })
 }
