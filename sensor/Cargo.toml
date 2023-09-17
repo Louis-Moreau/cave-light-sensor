@@ -23,6 +23,7 @@ postcard = "1.0.4"
 chrono = { version = "0.4.26", default-features = false }
 ufmt = "0.2.0"
 link-lib = { path = "../link-lib" }
+heapless = "0.7.16"
 
 [profile.dev]
 opt-level = 's'

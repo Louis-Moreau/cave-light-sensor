@@ -14,6 +14,7 @@ use light_sensor::*;
 use eeprom24x::{Eeprom24x, SlaveAddr};
 use opt300x::Opt300x;
 use rtic::app;
+use heapless::Vec;
 use rtic_monotonics::systick::*;
 use rtt_target::{rprintln, rtt_init_print};
 use stm32l0xx_hal::gpio::{
@@ -29,8 +30,8 @@ use stm32l0xx_hal::{
     rcc::Config,
     rtc::Rtc,
     syscfg::SYSCFG,
+    serial::*,
 };
-use core::fmt::Write;
 
 const GPIO_LINE: u8 = 0;
 const ZERO_TIME: u64 = 978307200;
@@ -38,11 +39,21 @@ const ZERO_TIME: u64 = 978307200;
 #[app(device = stm32l0xx_hal::pac, peripherals = true)]
 mod app {
 
+    use link_lib::{Event, MessageBuffer, Request};
+    use nb::block;
+    use stm32l0xx_hal::{
+        exti::DirectLine,
+        pac::lpuart1,
+        serial::{Serial, LPUART1},
+    };
+
     use super::*;
 
     #[shared]
     struct Shared {
         speedy: bool,
+        eeprom: MyEeprom,
+        rtc: Rtc,
     }
 
     #[local]
@@ -51,8 +62,9 @@ mod app {
         state: bool,
         interrupt_pin: PB0<Input<Floating>>,
         sensor: light_sensor::MyOpt3001,
-        eeprom: MyEeprom,
-        rtc: Rtc,
+        uart_rx: Rx<LPUART1>,
+        uart_tx: Tx<LPUART1>,
+        message_buffer: MessageBuffer<{link_lib::MAX_REQUEST_SIZE}>
     }
 
     #[init]
@@ -61,27 +73,32 @@ mod app {
         let mut rcc = cx.device.RCC.freeze(Config::hsi16());
 
         let pwr = PWR::new(cx.device.PWR, &mut rcc);
+        let lse = rcc.enable_lse(&pwr);
 
         // Initialize the systick interrupt & obtain the token to prove that we did
         let systick_mono_token = rtic_monotonics::create_systick_token!();
         Systick::start(cx.core.SYST, 16_000_000, systick_mono_token); // default STM32F303 clock-rate is 36MHz
-        //rtt_init_print!();
-        // Setup LED
+                                                                      //rtt_init_print!();
+                                                                      // Setup LED
         let gpiob = cx.device.GPIOB.split(&mut rcc);
         let gpioa = cx.device.GPIOA.split(&mut rcc);
 
-        let tx_pin = gpioa.pa1;
-        let rx_pin = gpioa.pa3;
+        let uart_tx_pin = gpioa.pa1;
+        let uart_rx_pin = gpioa.pa3;
 
-        let serial = cx.device
-        .LPUART1
-        .usart(tx_pin, rx_pin, stm32l0xx_hal::serial::Config::default(), &mut rcc)
-        .unwrap();
+        let mut serial = cx
+            .device
+            .LPUART1
+            .usart(
+                uart_tx_pin,
+                uart_rx_pin,
+                stm32l0xx_hal::serial::Config::default(),
+                &mut rcc,
+            )
+            .unwrap();
+        serial.use_lse(&mut rcc, &lse);
 
         let (mut tx, mut rx) = serial.split();
-
-        writeln!(tx, "Hello, world!\n").unwrap();
-
 
         let sda = gpiob.pb7.into_open_drain_output();
         let scl = gpiob.pb6.into_open_drain_output();
@@ -117,22 +134,28 @@ mod app {
             TriggerEdge::Falling,
         );
 
+        exti.listen_direct(DirectLine::Lpuart1);
+
         let mut led = gpiob.pb3.into_push_pull_output();
         led.set_high().unwrap();
 
         // Schedule the blinking task
         blink::spawn().ok();
-        let speedy = false;
 
         (
-            Shared { speedy },
+            Shared {
+                speedy : false,
+                eeprom,
+                rtc,
+            },
             Local {
                 interrupt_pin,
                 led,
                 state: false,
                 sensor,
-                eeprom,
-                rtc,
+                uart_rx : rx,
+                uart_tx : tx,
+                message_buffer : MessageBuffer::<{link_lib::MAX_REQUEST_SIZE}>::new()
             },
         )
     }
@@ -156,34 +179,55 @@ mod app {
         }
     }
 
-    #[task(binds = EXTI0_1, local = [interrupt_pin,sensor,eeprom,rtc], shared = [speedy])]
+    #[task(binds = EXTI0_1, local = [interrupt_pin,sensor], shared = [speedy,eeprom,rtc])]
     fn exti0_1(mut ctx: exti0_1::Context) {
         if Exti::is_pending(GpioLine::from_raw_line(GPIO_LINE).unwrap()) {
-            let mut light: bool = false;
+            let timestamp = ctx.shared.rtc.lock(|r| r.now().timestamp() as u32);
+
+            let mut light_detected: bool = false;
 
             let status = ctx.local.sensor.read_status().unwrap();
             if status.was_too_high {
                 wait_for_dark(ctx.local.sensor, MANTISSA_THRESHOLD, EXPONENT_THRESHOLD);
-                light = true;
-                rprintln!("HIGH");
-                increment_stored_count(ctx.local.eeprom);
+                light_detected = true;
+
+                let event = Event::High(timestamp);
+                ctx.shared.eeprom.lock(move |eeprom| {
+                    write_event_to_eeprom(eeprom, event);
+                });
             } else if status.was_too_low {
                 wait_for_light(ctx.local.sensor, MANTISSA_THRESHOLD, EXPONENT_THRESHOLD);
-                light = false;
-                rprintln!("LOW");
-                increment_stored_count(ctx.local.eeprom);
+                light_detected = false;
+
+                let event = Event::Low(timestamp);
+                ctx.shared.eeprom.lock(move |eeprom| {
+                    write_event_to_eeprom(eeprom, event);
+                });
             }
-            let now = ctx.local.rtc.now().timestamp() as u64 - ZERO_TIME;
-            rprintln!("time : {}", now);
 
             ctx.shared.speedy.lock(|speedy| {
-                *speedy = light;
+                *speedy = light_detected;
             });
+
             Exti::unpend(GpioLine::from_raw_line(GPIO_LINE).unwrap());
 
             //rprintln!("status {:?}", status);
             //let value = ctx.local.sensor.read_lux().unwrap();
             //rprintln!("value {:?}", value as u32);
+        }
+    }
+
+    #[task(binds = AES_RNG_LPUART1, local =  [uart_rx,uart_tx,message_buffer])]
+    fn uart0(cx: uart0::Context) {
+        if Exti::is_pending(DirectLine::Lpuart1) {
+            //let (tx,rx) = cx.local.serial.split();
+            while cx.local.uart_rx.is_rx_not_empty() {
+                let byte = block!(cx.local.uart_rx.read()).unwrap();
+
+                if let Ok(Some(req)) = cx.local.message_buffer.add_byte_and_check_for_request(&byte) {
+                    req
+                }
+            }
         }
     }
 }
