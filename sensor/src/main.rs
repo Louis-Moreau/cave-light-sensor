@@ -8,44 +8,31 @@ use panic_abort as _;
 mod eeprom;
 mod light_sensor;
 mod rtc;
+mod tasks;
 use eeprom::*;
-use light_sensor::*;
-
 use eeprom24x::{Eeprom24x, SlaveAddr};
+use light_sensor::*;
+use link_lib::MessageBuffer;
 use opt300x::Opt300x;
 use rtic::app;
-use heapless::Vec;
 use rtic_monotonics::systick::*;
-use rtt_target::{rprintln, rtt_init_print};
-use stm32l0xx_hal::gpio::{
-    *,
-    {gpiob::*, OpenDrain, Output, PushPull},
-};
-use stm32l0xx_hal::i2c::I2c;
-use stm32l0xx_hal::pac::I2C1;
 use stm32l0xx_hal::{
-    exti::{Exti, ExtiLine, GpioLine, TriggerEdge},
+    exti::{DirectLine, Exti, ExtiLine, GpioLine, TriggerEdge},
+    gpio::{gpiob::*, OpenDrain, Output, PushPull, *},
+    i2c::I2c,
+    pac::I2C1,
     prelude::*,
     pwr::PWR,
     rcc::Config,
     rtc::Rtc,
     syscfg::SYSCFG,
-    serial::*,
 };
 
 const GPIO_LINE: u8 = 0;
-const ZERO_TIME: u64 = 978307200;
 
 #[app(device = stm32l0xx_hal::pac, peripherals = true)]
 mod app {
-
-    use link_lib::{Event, MessageBuffer, Request};
-    use nb::block;
-    use stm32l0xx_hal::{
-        exti::DirectLine,
-        pac::lpuart1,
-        serial::{Serial, LPUART1},
-    };
+    use tasks::{LightInterruptState, UartInterruptState};
 
     use super::*;
 
@@ -60,11 +47,8 @@ mod app {
     struct Local {
         led: PB3<Output<PushPull>>,
         state: bool,
-        interrupt_pin: PB0<Input<Floating>>,
-        sensor: light_sensor::MyOpt3001,
-        uart_rx: Rx<LPUART1>,
-        uart_tx: Tx<LPUART1>,
-        message_buffer: MessageBuffer<{link_lib::MAX_REQUEST_SIZE}>
+        light_int_state: LightInterruptState,
+        uart_int_state: UartInterruptState,
     }
 
     #[init]
@@ -98,7 +82,7 @@ mod app {
             .unwrap();
         serial.use_lse(&mut rcc, &lse);
 
-        let (mut tx, mut rx) = serial.split();
+        let (tx, rx) = serial.split();
 
         let sda = gpiob.pb7.into_open_drain_output();
         let scl = gpiob.pb6.into_open_drain_output();
@@ -144,18 +128,23 @@ mod app {
 
         (
             Shared {
-                speedy : false,
+                speedy: false,
                 eeprom,
                 rtc,
             },
             Local {
-                interrupt_pin,
+                light_int_state: LightInterruptState {
+                    interrupt_pin: interrupt_pin,
+                    sensor: sensor,
+                },
+                uart_int_state: UartInterruptState {
+                    uart_rx: rx,
+                    uart_tx: tx,
+                    message_buffer: MessageBuffer::<{ link_lib::MAX_REQUEST_SIZE }>::new(),
+                    last_timestamp: 0,
+                },
                 led,
                 state: false,
-                sensor,
-                uart_rx : rx,
-                uart_tx : tx,
-                message_buffer : MessageBuffer::<{link_lib::MAX_REQUEST_SIZE}>::new()
             },
         )
     }
@@ -179,55 +168,13 @@ mod app {
         }
     }
 
-    #[task(binds = EXTI0_1, local = [interrupt_pin,sensor], shared = [speedy,eeprom,rtc])]
-    fn exti0_1(mut ctx: exti0_1::Context) {
-        if Exti::is_pending(GpioLine::from_raw_line(GPIO_LINE).unwrap()) {
-            let timestamp = ctx.shared.rtc.lock(|r| r.now().timestamp() as u32);
-
-            let mut light_detected: bool = false;
-
-            let status = ctx.local.sensor.read_status().unwrap();
-            if status.was_too_high {
-                wait_for_dark(ctx.local.sensor, MANTISSA_THRESHOLD, EXPONENT_THRESHOLD);
-                light_detected = true;
-
-                let event = Event::High(timestamp);
-                ctx.shared.eeprom.lock(move |eeprom| {
-                    write_event_to_eeprom(eeprom, event);
-                });
-            } else if status.was_too_low {
-                wait_for_light(ctx.local.sensor, MANTISSA_THRESHOLD, EXPONENT_THRESHOLD);
-                light_detected = false;
-
-                let event = Event::Low(timestamp);
-                ctx.shared.eeprom.lock(move |eeprom| {
-                    write_event_to_eeprom(eeprom, event);
-                });
-            }
-
-            ctx.shared.speedy.lock(|speedy| {
-                *speedy = light_detected;
-            });
-
-            Exti::unpend(GpioLine::from_raw_line(GPIO_LINE).unwrap());
-
-            //rprintln!("status {:?}", status);
-            //let value = ctx.local.sensor.read_lux().unwrap();
-            //rprintln!("value {:?}", value as u32);
-        }
+    #[task(binds = EXTI0_1, local = [light_int_state], shared = [speedy,eeprom,rtc])]
+    fn exti0_1(ctx: exti0_1::Context) {
+        tasks::light_interrupt(ctx);
     }
 
-    #[task(binds = AES_RNG_LPUART1, local =  [uart_rx,uart_tx,message_buffer])]
-    fn uart0(cx: uart0::Context) {
-        if Exti::is_pending(DirectLine::Lpuart1) {
-            //let (tx,rx) = cx.local.serial.split();
-            while cx.local.uart_rx.is_rx_not_empty() {
-                let byte = block!(cx.local.uart_rx.read()).unwrap();
-
-                if let Ok(Some(req)) = cx.local.message_buffer.add_byte_and_check_for_request(&byte) {
-                    req
-                }
-            }
-        }
+    #[task(binds = AES_RNG_LPUART1, local = [uart_int_state], shared = [eeprom,rtc])]
+    fn uart0(ctx: uart0::Context) {
+        tasks::uart_interrupt(ctx);
     }
 }

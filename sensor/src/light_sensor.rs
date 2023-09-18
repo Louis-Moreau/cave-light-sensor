@@ -1,8 +1,9 @@
 use opt300x::{ic::Opt3001, FaultCount, Opt300x};
-use stm32l0xx_hal::gpio::gpiob::*;
-use stm32l0xx_hal::gpio::{OpenDrain, Output};
-use stm32l0xx_hal::i2c::I2c;
-use stm32l0xx_hal::pac::I2C1;
+use stm32l0xx_hal::{
+    gpio::{gpiob::*, OpenDrain, Output},
+    i2c::I2c,
+    pac::I2C1,
+};
 
 pub type MyOpt3001 = Opt300x<
     shared_bus::I2cProxy<
@@ -40,7 +41,8 @@ pub fn setup_sensor(sensor: &mut MyOpt3001) {
         .set_integration_time(opt300x::IntegrationTime::Ms800)
         .unwrap();
 
-    //Reset flag and interrupt in case the MCU had a reset when while the sensor had an interrupt
+    //Reset flag and interrupt in case the MCU had a reset when while the sensor
+    // had an interrupt
     let _ = sensor.read_status();
 
     wait_for_light(sensor, MANTISSA_THRESHOLD, EXPONENT_THRESHOLD);

@@ -1,14 +1,13 @@
 use eeprom24x::Eeprom24x;
-
+use link_lib::Event;
 use nb::block;
 use postcard::experimental::max_size::MaxSize;
 use rtt_target::rprintln;
-use stm32l0xx_hal::gpio::gpiob::*;
-use stm32l0xx_hal::gpio::{OpenDrain, Output};
-use stm32l0xx_hal::i2c::I2c;
-use stm32l0xx_hal::pac::I2C1;
-
-use link_lib::Event;
+use stm32l0xx_hal::{
+    gpio::{gpiob::*, OpenDrain, Output},
+    i2c::I2c,
+    pac::I2C1,
+};
 
 pub type MyEeprom = Eeprom24x<
     shared_bus::I2cProxy<
@@ -63,13 +62,17 @@ pub fn read_count_from_eeprom(eeprom: &mut MyEeprom) -> u32 {
     u32::from_le_bytes(data)
 }
 
-pub fn write_data_to_eeprom_blocking(eeprom: &mut MyEeprom, address: u32, data: &[u8]) {
+pub fn write_data_to_eeprom_blocking(eeprom: &mut MyEeprom, address: u32, data: &[u8]) ->  Result<(),()> {
     for (offset, byte) in data.iter().enumerate() {
-        write_byte_to_eeprom_blocking(eeprom, address + offset as u32, *byte);
+        match write_byte_to_eeprom_blocking(eeprom, address + offset as u32, *byte) {
+            Ok(_) => (),
+            Err(_) => return Err(()),
+        }
     }
+    return Ok(())
 }
 
-pub fn write_byte_to_eeprom_blocking(eeprom: &mut MyEeprom, address: u32, byte: u8) {
+pub fn write_byte_to_eeprom_blocking(eeprom: &mut MyEeprom, address: u32, byte: u8) -> Result<(),()>{
     block!(match eeprom.write_byte(address, byte) {
         Ok(_) => Ok(()),
         Err(e) => match e {
@@ -78,7 +81,6 @@ pub fn write_byte_to_eeprom_blocking(eeprom: &mut MyEeprom, address: u32, byte: 
             eeprom24x::Error::InvalidAddr => Err(nb::Error::Other(())),
         },
     })
-    .unwrap()
 }
 
 pub fn zero_stored_count(eeprom: &mut MyEeprom) {
