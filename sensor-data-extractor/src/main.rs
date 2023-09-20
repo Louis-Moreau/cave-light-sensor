@@ -1,6 +1,9 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+mod commands;
 mod serial;
 // import the prelude to get access to the `rsx!` macro and the `Scope` and `Element` types
+
+use std::thread::{self, JoinHandle};
 
 use eframe::egui;
 use serialport::SerialPortInfo;
@@ -15,6 +18,8 @@ fn main() -> Result<(), eframe::Error> {
     };
 
     // Our application state:
+    let mut thread: Option<JoinHandle<_>> = Option::None::<JoinHandle<_>>;
+    let mut is_thread_finished = true;
     let mut selected_serial: Option<SerialPortInfo> = None;
     let mut baud_rate: u64 = 9600;
     let mut vec_serial: Vec<SerialPortInfo> = match serialport::available_ports() {
@@ -67,9 +72,28 @@ fn main() -> Result<(), eframe::Error> {
                     ui.selectable_value(&mut baud_rate, 1200, "1200");
                 });
 
-            ui.group(|ui| {
-                ui.set_enabled(selected_serial.is_some());
-                if ui.button("Connect").clicked() {}
+            is_thread_finished = match &thread {
+                Some(t) => t.is_finished(),
+                None => true,
+            };
+            ui.horizontal(|ui| {
+                ui.group(|ui| {
+                    ui.set_enabled(selected_serial.is_some());
+                    if ui.button("Disconnect").clicked() {
+                        match thread {
+                            Some(t) => (),
+                            None => todo!(),
+                        };
+                    }
+                });
+
+                ui.group(|ui| {
+                    ui.set_enabled(selected_serial.is_some() && is_thread_finished);
+                    if ui.button("Connect").clicked() {
+                        thread = Some(thread::spawn(|| {}));
+                        is_thread_finished = false;
+                    }
+                });
             });
         });
     })
