@@ -12,6 +12,6 @@ pub enum Commands {
     SyncTime,
 }
 
-impl Commands {
+/*impl Commands {
     pub fn to_request(&self) -> Vec<Request> {}
-}
+}*/

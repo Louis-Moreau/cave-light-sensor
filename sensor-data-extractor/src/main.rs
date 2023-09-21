@@ -6,7 +6,7 @@ mod serial;
 use std::thread::{self, JoinHandle};
 
 use eframe::egui;
-use serialport::SerialPortInfo;
+use serialport::{SerialPortInfo, SerialPort};
 
 fn main() -> Result<(), eframe::Error> {
     env_logger::init(); // Log to stderr (if you run with `RUST_LOG=debug`).
@@ -18,10 +18,10 @@ fn main() -> Result<(), eframe::Error> {
     };
 
     // Our application state:
-    let mut thread: Option<JoinHandle<_>> = Option::None::<JoinHandle<_>>;
-    let mut is_thread_finished = true;
+    let mut command_thread: Option<JoinHandle<Box<dyn SerialPort>>> = None;
     let mut selected_serial: Option<SerialPortInfo> = None;
-    let mut baud_rate: u64 = 9600;
+    let mut serial_port: Option<Box<dyn SerialPort>> = None;
+    let mut baud_rate: u32 = 9600;
     let mut vec_serial: Vec<SerialPortInfo> = match serialport::available_ports() {
         Ok(v) => v,
         Err(_) => Vec::new(),
@@ -72,26 +72,30 @@ fn main() -> Result<(), eframe::Error> {
                     ui.selectable_value(&mut baud_rate, 1200, "1200");
                 });
 
-            is_thread_finished = match &thread {
-                Some(t) => t.is_finished(),
-                None => true,
-            };
             ui.horizontal(|ui| {
-                ui.group(|ui| {
-                    ui.set_enabled(selected_serial.is_some());
-                    if ui.button("Disconnect").clicked() {
-                        match thread {
-                            Some(t) => (),
-                            None => todo!(),
-                        };
+                /*ui.group(|ui| {
+                    let button = ui.button("Disconnect");
+                    if let Some(s) = serial_port {
+                        ui.set_enabled(command_thread.is_none());
+                        if button.clicked() {
+                            
+                        }
+                    } else {
+                        ui.set_enabled(false);
                     }
-                });
+                });*/
 
                 ui.group(|ui| {
-                    ui.set_enabled(selected_serial.is_some() && is_thread_finished);
-                    if ui.button("Connect").clicked() {
-                        thread = Some(thread::spawn(|| {}));
-                        is_thread_finished = false;
+                    ui.set_enabled(false);
+                    let button = ui.button("Connect");
+                    if let Some(s) = &selected_serial {
+                        ui.set_enabled(command_thread.is_none());
+                        if button.clicked() {
+                            println!("test")
+                            //serial_port = Some(serialport::new(&s.port_name,baud_rate).open().unwrap());
+                        }
+                    } else {
+                        ui.set_enabled(false);
                     }
                 });
             });
