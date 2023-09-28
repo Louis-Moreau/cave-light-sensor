@@ -3,10 +3,10 @@ mod commands;
 mod serial;
 // import the prelude to get access to the `rsx!` macro and the `Scope` and `Element` types
 
-use std::thread::{self, JoinHandle};
+use std::thread::JoinHandle;
 
 use eframe::egui;
-use serialport::{SerialPortInfo, SerialPort};
+use tokio_serial::{SerialPortInfo, SerialStream};
 
 fn main() -> Result<(), eframe::Error> {
     env_logger::init(); // Log to stderr (if you run with `RUST_LOG=debug`).
@@ -18,11 +18,11 @@ fn main() -> Result<(), eframe::Error> {
     };
 
     // Our application state:
-    let mut command_thread: Option<JoinHandle<Box<dyn SerialPort>>> = None;
+    let mut command_thread: Option<JoinHandle<()>> = None;
     let mut selected_serial: Option<SerialPortInfo> = None;
-    let mut serial_port: Option<Box<dyn SerialPort>> = None;
+    let mut serial_port: Option<SerialStream> = None;
     let mut baud_rate: u32 = 9600;
-    let mut vec_serial: Vec<SerialPortInfo> = match serialport::available_ports() {
+    let mut vec_serial: Vec<SerialPortInfo> = match tokio_serial::available_ports() {
         Ok(v) => v,
         Err(_) => Vec::new(),
     };
@@ -54,7 +54,7 @@ fn main() -> Result<(), eframe::Error> {
                     });
 
                 if ui.button("Refresh").clicked() {
-                    vec_serial = match serialport::available_ports() {
+                    vec_serial = match tokio_serial::available_ports() {
                         Ok(v) => v,
                         Err(_) => Vec::new(),
                     }
@@ -65,7 +65,7 @@ fn main() -> Result<(), eframe::Error> {
                 .selected_text(format!("{baud_rate:?}"))
                 .show_ui(ui, |ui| {
                     ui.style_mut().wrap = Some(false);
-                    ui.set_min_width(60.0);
+                    ui.set_min_width(80.0);
                     ui.selectable_value(&mut baud_rate, 9600, "9600");
                     ui.selectable_value(&mut baud_rate, 4800, "4800");
                     ui.selectable_value(&mut baud_rate, 2400, "2400");
@@ -73,29 +73,18 @@ fn main() -> Result<(), eframe::Error> {
                 });
 
             ui.horizontal(|ui| {
-                /*ui.group(|ui| {
-                    let button = ui.button("Disconnect");
-                    if let Some(s) = serial_port {
-                        ui.set_enabled(command_thread.is_none());
-                        if button.clicked() {
-                            
-                        }
-                    } else {
-                        ui.set_enabled(false);
-                    }
-                });*/
-
                 ui.group(|ui| {
-                    ui.set_enabled(false);
+                    ui.set_enabled(selected_serial.is_some() && command_thread.is_none());
                     let button = ui.button("Connect");
                     if let Some(s) = &selected_serial {
-                        ui.set_enabled(command_thread.is_none());
                         if button.clicked() {
-                            println!("test")
-                            //serial_port = Some(serialport::new(&s.port_name,baud_rate).open().unwrap());
+                            //println!("test")
+                            serial_port = Some(
+                                SerialStream::open(&tokio_serial::new(&s.port_name, baud_rate))
+                                    .unwrap(),
+                            );
+                             
                         }
-                    } else {
-                        ui.set_enabled(false);
                     }
                 });
             });

@@ -1,28 +1,45 @@
-use std::io::{Read, Write};
-use std::sync::mpsc::{Receiver, Sender};
+use tokio::sync::oneshot;
+use std::result::Result::Ok;
+use tokio::sync::mpsc::{Receiver, Sender};
 use std::thread::{self, JoinHandle};
+use tokio::runtime::Runtime;
+use tokio::task;
+use tokio_serial::SerialStream;
 
-use anyhow::{anyhow, Result};
-use link_lib::MessageBuffer;
-use link_lib::{BusMessage, Request, Response};
-use serialport::SerialPort;
-use serialport::TTYPort;
-use serialport::{new, SerialPortInfo};
+use crate::commands::{Commands, ping};
 
-use crate::commands::Commands;
+pub fn spawn_command_handler(
+    mut port: SerialStream,
+    mut commands_receiver: Receiver<Commands>,
+    logs_sender: Sender<String>,
+    quit : oneshot::Receiver<()>
+) -> JoinHandle<()> {
+    thread::spawn(move || {
+        let rt = Runtime::new().unwrap();
+        rt.block_on(async {
 
-/*fn handle_command(port: TTYPort, command: Commands, logs: Receiver<String>) -> JoinHandle<TTYPort> {
-    thread::spawn(||{
-        TTYPort::
+            task::spawn(async move {
+                loop {
+                    let command = match commands_receiver.recv().await {
+                        Some(c) => c,
+                        None => break,
+                    };
+                    let _ = match command {
+                        Commands::Ping => _ = ping(&mut port, &logs_sender).await,
+                        Commands::SetSensorId => (),
+                        Commands::GetEverything => (),
+                        Commands::GetEverythingAndSave(_) => (),
+                        Commands::ResetSensor => (),
+                        Commands::GetTime => (),
+                        Commands::SyncTime => (),
+                    };
+                }
+            });
 
-
-
-
-
-
-
-
-
-
+            match quit.await {
+                Ok(_) => (),
+                Err(_) => (),
+            }
+        });
     })
-}*/
+}
