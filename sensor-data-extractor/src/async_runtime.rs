@@ -1,23 +1,22 @@
-use tokio::sync::oneshot;
 use std::result::Result::Ok;
-use tokio::sync::mpsc::{Receiver, Sender};
 use std::thread::{self, JoinHandle};
 use tokio::runtime::Runtime;
+use tokio::sync::mpsc::{Receiver, Sender};
+use tokio::sync::oneshot;
 use tokio::task;
 use tokio_serial::SerialStream;
 
-use crate::commands::{Commands, ping};
+use crate::commands::{ping, Commands};
 
 pub fn spawn_command_handler(
     mut port: SerialStream,
     mut commands_receiver: Receiver<Commands>,
     logs_sender: Sender<String>,
-    quit : oneshot::Receiver<()>
+    quit: oneshot::Receiver<()>,
 ) -> JoinHandle<()> {
     thread::spawn(move || {
         let rt = Runtime::new().unwrap();
         rt.block_on(async {
-
             task::spawn(async move {
                 loop {
                     let command = match commands_receiver.recv().await {
@@ -26,12 +25,12 @@ pub fn spawn_command_handler(
                     };
                     let _ = match command {
                         Commands::Ping => _ = ping(&mut port, &logs_sender).await,
-                        Commands::SetSensorId => (),
-                        Commands::GetEverything => (),
-                        Commands::GetEverythingAndSave(_) => (),
-                        Commands::ResetSensor => (),
-                        Commands::GetTime => (),
-                        Commands::SyncTime => (),
+                        Commands::SetSensorId => panic!("NOT IMPLEMENTED"),
+                        Commands::GetEverything => panic!("NOT IMPLEMENTED"),
+                        Commands::GetEverythingAndSave(_) => panic!("NOT IMPLEMENTED"),
+                        Commands::ResetSensor => panic!("NOT IMPLEMENTED"),
+                        Commands::GetTime => panic!("NOT IMPLEMENTED"),
+                        Commands::SyncTime => panic!("NOT IMPLEMENTED"),
                     };
                 }
             });
