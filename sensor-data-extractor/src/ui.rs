@@ -2,6 +2,8 @@ use std::thread::JoinHandle;
 
 mod serial_selector;
 mod baud_rate;
+mod command_selector;
+mod connect;
 
 use eframe::egui;
 use egui::Widget;

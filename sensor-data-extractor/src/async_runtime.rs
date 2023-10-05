@@ -6,11 +6,11 @@ use tokio::sync::oneshot;
 use tokio::task;
 use tokio_serial::SerialStream;
 
-use crate::commands::{ping, Commands};
+use crate::commands::{ping, Command};
 
 pub fn spawn_command_handler(
     mut port: SerialStream,
-    mut commands_receiver: Receiver<Commands>,
+    mut commands_receiver: Receiver<Command>,
     logs_sender: Sender<String>,
     quit: oneshot::Receiver<()>,
 ) -> JoinHandle<()> {
@@ -24,13 +24,13 @@ pub fn spawn_command_handler(
                         None => break,
                     };
                     let _ = match command {
-                        Commands::Ping => _ = ping(&mut port, &logs_sender).await,
-                        Commands::SetSensorId => panic!("NOT IMPLEMENTED"),
-                        Commands::GetEverything => panic!("NOT IMPLEMENTED"),
-                        Commands::GetEverythingAndSave(_) => panic!("NOT IMPLEMENTED"),
-                        Commands::ResetSensor => panic!("NOT IMPLEMENTED"),
-                        Commands::GetTime => panic!("NOT IMPLEMENTED"),
-                        Commands::SyncTime => panic!("NOT IMPLEMENTED"),
+                        Command::Ping => _ = ping(&mut port, &logs_sender).await,
+                        Command::SetSensorId(_) => panic!("NOT IMPLEMENTED"),
+                        Command::GetEverything => panic!("NOT IMPLEMENTED"),
+                        Command::GetEverythingAndSave(_) => panic!("NOT IMPLEMENTED"),
+                        Command::ResetSensor => panic!("NOT IMPLEMENTED"),
+                        Command::GetTime => panic!("NOT IMPLEMENTED"),
+                        Command::SyncTime => panic!("NOT IMPLEMENTED"),
                     };
                 }
             });
