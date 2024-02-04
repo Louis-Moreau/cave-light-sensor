@@ -1,11 +1,11 @@
-#![no_std]
+pub mod error;
 
-mod event;
-mod input_buffer;
-mod bus_message;
-mod request;
-mod response;
-pub use event::*;
-pub use bus_message::*;
-pub use request::*;
-pub use response::*;
+#[cfg(feature = "async")]
+pub mod embedded_link;
+#[cfg(feature = "embedded")]
+pub use embedded_link::Link;
+
+#[cfg(feature = "async")]
+pub mod async_link;
+#[cfg(feature = "async")]
+pub use async_link::Link;
