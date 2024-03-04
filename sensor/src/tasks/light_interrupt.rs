@@ -1,4 +1,3 @@
-use link_lib::Event;
 use rtic::Mutex;
 use stm32l0xx_hal::{
     exti::{Exti, ExtiLine, GpioLine},
@@ -7,15 +6,17 @@ use stm32l0xx_hal::{
 
 use crate::{
     app::exti0_1,
-    eeprom::*,
     light_sensor::{self, *},
+    storage::event::Event,
     GPIO_LINE,
 };
 
 pub fn light_interrupt(mut ctx: exti0_1::Context) {
     if Exti::is_pending(GpioLine::from_raw_line(GPIO_LINE).unwrap()) {
+        Exti::unpend(GpioLine::from_raw_line(GPIO_LINE).unwrap());
+
         let state = ctx.local.light_int_state;
-        let timestamp = ctx.shared.rtc.lock(|r| r.now().timestamp() as u32);
+        let timestamp = ctx.shared.rtc.lock(|r| r.now().timestamp());
 
         let mut light_detected: bool = false;
 
@@ -25,24 +26,18 @@ pub fn light_interrupt(mut ctx: exti0_1::Context) {
             light_detected = true;
 
             let event = Event::High(timestamp);
-            ctx.shared.eeprom.lock(move |eeprom| {
-                write_event_to_eeprom(eeprom, event);
-            });
+            //WRITE TO EEPROM
         } else if status.was_too_low {
             wait_for_light(&mut state.sensor, MANTISSA_THRESHOLD, EXPONENT_THRESHOLD);
             light_detected = false;
 
             let event = Event::Low(timestamp);
-            ctx.shared.eeprom.lock(move |eeprom| {
-                write_event_to_eeprom(eeprom, event);
-            });
+            //WRITE TO EEPROM
         }
 
         ctx.shared.speedy.lock(|speedy| {
             *speedy = light_detected;
         });
-
-        Exti::unpend(GpioLine::from_raw_line(GPIO_LINE).unwrap());
 
         //rprintln!("status {:?}", status);
         //let value = ctx.local.sensor.read_lux().unwrap();

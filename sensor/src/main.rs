@@ -5,14 +5,12 @@
 
 use panic_abort as _;
 
-mod eeprom;
 mod light_sensor;
 mod rtc;
+mod storage;
 mod tasks;
-use eeprom::*;
 use eeprom24x::{Eeprom24x, SlaveAddr};
 use light_sensor::*;
-use link_lib::MessageBuffer;
 use opt300x::Opt300x;
 use rtic::app;
 use rtic_monotonics::systick::*;
@@ -32,6 +30,8 @@ const GPIO_LINE: u8 = 0;
 
 #[app(device = stm32l0xx_hal::pac, peripherals = true)]
 mod app {
+    use link_lib::Link;
+    use stm32l0xx_hal::{pac::LPUART1, serial::Serial};
     use tasks::{LightInterruptState, UartInterruptState};
 
     use super::*;
@@ -39,7 +39,7 @@ mod app {
     #[shared]
     struct Shared {
         speedy: bool,
-        eeprom: MyEeprom,
+        //eeprom: MyEeprom,
         rtc: Rtc,
     }
 
@@ -48,7 +48,6 @@ mod app {
         led: PB3<Output<PushPull>>,
         state: bool,
         light_int_state: LightInterruptState,
-        uart_int_state: UartInterruptState,
     }
 
     #[init]
@@ -82,7 +81,7 @@ mod app {
             .unwrap();
         serial.use_lse(&mut rcc, &lse);
 
-        let (tx, rx) = serial.split();
+        //let link: Link<Serial<LPUART1>, (), (), 32>::new(serial);
 
         let sda = gpiob.pb7.into_open_drain_output();
         let scl = gpiob.pb6.into_open_drain_output();
@@ -94,7 +93,7 @@ mod app {
             &mut rcc,
         );
 
-        let shared_i2c  = shared_bus::new_cortexm!(I2c<I2C1, PB7<Output<OpenDrain>>, PB6<Output<OpenDrain>>> = i2c).unwrap();
+        let mut shared_i2c  = shared_bus::new_cortexm!(I2c<I2C1, PB7<Output<OpenDrain>>, PB6<Output<OpenDrain>>> = i2c).unwrap();
         let eeprom = Eeprom24x::new_24x256(shared_i2c.acquire_i2c(), SlaveAddr::default());
 
         let sensor = Opt300x::new_opt3001(
@@ -127,22 +126,13 @@ mod app {
         blink::spawn().ok();
 
         (
-            Shared {
-                speedy: false,
-                eeprom,
-                rtc,
-            },
+            Shared { speedy: false, rtc },
             Local {
                 light_int_state: LightInterruptState {
                     interrupt_pin: interrupt_pin,
                     sensor: sensor,
                 },
-                uart_int_state: UartInterruptState {
-                    uart_rx: rx,
-                    uart_tx: tx,
-                    message_buffer: MessageBuffer::<{ link_lib::MAX_REQUEST_SIZE }>::new(),
-                    last_timestamp: 0,
-                },
+
                 led,
                 state: false,
             },
@@ -168,13 +158,9 @@ mod app {
         }
     }
 
-    #[task(binds = EXTI0_1, local = [light_int_state], shared = [speedy,eeprom,rtc])]
-    fn exti0_1(ctx: exti0_1::Context) {
-        tasks::light_interrupt(ctx);
-    }
+    #[task(binds = EXTI0_1, local = [light_int_state], shared = [speedy,rtc])]
+    fn exti0_1(ctx: exti0_1::Context) {}
 
-    #[task(binds = AES_RNG_LPUART1, local = [uart_int_state], shared = [eeprom,rtc])]
-    fn uart0(ctx: uart0::Context) {
-        tasks::uart_interrupt(ctx);
-    }
+    #[task(binds = AES_RNG_LPUART1, local = [], shared = [rtc])]
+    fn uart0(ctx: uart0::Context) {}
 }
