@@ -4,7 +4,6 @@ use heapless::Vec;
 use postcard::{accumulator::CobsAccumulator, experimental::max_size::MaxSize};
 use crate::error::MyError;
 
-
 pub struct Link<S,REQ,RESP,const SIZE : usize> {
     serial: S,
     buffer : CobsAccumulator<SIZE>,
@@ -15,7 +14,7 @@ pub struct Link<S,REQ,RESP,const SIZE : usize> {
 impl<'a, S,REQ,RESP,const SIZE : usize> Link<S,REQ,RESP,SIZE>
 where
     S: embedded_hal::serial::Read<u8> + embedded_hal::blocking::serial::Write<u8>,
-    REQ :  for<'de> serde::Deserialize<'de> + MaxSize  + Clone,
+    REQ :  for<'de> serde::Deserialize<'de> + MaxSize,
     RESP : serde::Serialize
 {
     pub fn new(serial: S) -> Self {

@@ -7,7 +7,7 @@ use tokio_serial::SerialStream;
 
 use crate::serial_messages::get_reponse;
 
-#[derive(PartialEq)]
+#[derive(PartialEq,Clone)]
 pub enum Command {
     Ping,
     SetSensorId(u64),
@@ -31,16 +31,4 @@ pub async fn ping(port: &mut SerialStream, log: &Sender<String>) -> Result<()> {
     Ok(())
 }
 
-impl Command {
-    pub fn to_string(&self) -> String {
-        match self {
-            Command::Ping => "Ping".to_string(),
-            Command::SetSensorId(_) =>  "SetSensorId".to_string(),
-            Command::GetEverything =>  "GetEverything".to_string(),
-            Command::GetEverythingAndSave(_) => "GetEverythingAndSave".to_string(),
-            Command::ResetSensor =>  "ResetSensor".to_string(),
-            Command::GetTime =>  "GetTime".to_string(),
-            Command::SyncTime =>  "SyncTime".to_string(),
-        }
-    }
-}
+

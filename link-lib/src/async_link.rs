@@ -14,7 +14,7 @@ pub struct Link<S,REQ,RESP,const SIZE : usize> {
 impl<'a, S,REQ,RESP,const SIZE : usize> Link<S,REQ,RESP,SIZE>
 where
     S:  tokio::io::AsyncReadExt + tokio::io::AsyncWriteExt + std::marker::Unpin,
-    REQ :  for<'de> serde::Deserialize<'de> + MaxSize  + Clone,
+    REQ :  for<'de> serde::Deserialize<'de> + MaxSize,
     RESP : serde::Serialize
 {
     pub fn new(serial: S) -> Self {

@@ -1,6 +1,7 @@
+#![no_std]
 pub mod error;
 
-#[cfg(feature = "async")]
+#[cfg(feature = "embedded")]
 pub mod embedded_link;
 #[cfg(feature = "embedded")]
 pub use embedded_link::Link;
