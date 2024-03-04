@@ -22,7 +22,8 @@ serde = { version = "1.0.196", default-features = false }
 postcard = "1.0.8"
 chrono = { version = "0.4.34", default-features = false }
 ufmt = "0.2.0"
-link-lib = { path = "../link-lib" , features = ["embedded"]} 
+link-lib = { path = "../link-lib" , features = ["embedded"]}
+common-data = { path = "../common-data"} 
 heapless = "0.8.0"
 
 [profile.dev]

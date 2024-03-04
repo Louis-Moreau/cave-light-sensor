@@ -1,6 +1,7 @@
+use common_data::event::Event;
 use embedded_hal::blocking::i2c::{Write, WriteRead};
 
-use super::{eeprom::MyEeprom, event::Event};
+use super::eeprom::MyEeprom;
 
 pub struct EventStorage<I2C> {
     storage: MyEeprom<I2C>,
