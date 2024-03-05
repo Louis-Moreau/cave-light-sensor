@@ -1,3 +1,4 @@
+use common_data::event::Event;
 use rtic::Mutex;
 use stm32l0xx_hal::{
     exti::{Exti, ExtiLine, GpioLine},
@@ -7,7 +8,6 @@ use stm32l0xx_hal::{
 use crate::{
     app::exti0_1,
     light_sensor::{self, *},
-    storage::event::Event,
     GPIO_LINE,
 };
 
@@ -26,13 +26,25 @@ pub fn light_interrupt(mut ctx: exti0_1::Context) {
             light_detected = true;
 
             let event = Event::High(timestamp);
-            //WRITE TO EEPROM
+            ctx.shared.storage.lock(|s|{
+                if let Some(e) = s.get_last_event().unwrap() {
+                    if let Event::Low(event_ts) = e {
+                        if event_ts - MIN_OFF_TIME
+                    } else {
+
+                    }
+                } else {
+
+                }
+            });
         } else if status.was_too_low {
             wait_for_light(&mut state.sensor, MANTISSA_THRESHOLD, EXPONENT_THRESHOLD);
             light_detected = false;
 
             let event = Event::Low(timestamp);
-            //WRITE TO EEPROM
+            ctx.shared.storage.lock(|s|{
+                s.add_new_event(event).unwrap();
+            });
         }
 
         ctx.shared.speedy.lock(|speedy| {

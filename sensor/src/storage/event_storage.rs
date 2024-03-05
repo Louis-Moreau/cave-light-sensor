@@ -33,30 +33,51 @@ where
     }
 
     pub fn get_last_event(&self) -> Result<Option<Event>, ()> {
-        let number = self.get_number_of_event()?;
-        if number == 0 {
+        let number_of_event = self.get_number_of_event()?;
+        let mut data: [u8; 4] = [0u8; 4];
+        self.storage
+            .read_data_from_eeprom(EVENT_ADDR + EVENT_SIZE *  (number_of_event-1), &mut data)?;
+        Ok(Some(Event::from_compact_u32(u32::from_be_bytes(data))?))
+    }
+
+    pub fn get_event_from_end(&self, event_number: u32) -> Result<Option<Event>, ()> {
+        let number_of_event = self.get_number_of_event()?;
+        if number_of_event < event_number {
             return Ok(None);
         }
         let mut data: [u8; 4] = [0u8; 4];
         self.storage
-            .read_data_from_eeprom(EVENT_ADDR + EVENT_SIZE * (number - 1), &mut data)?;
+            .read_data_from_eeprom(EVENT_ADDR + EVENT_SIZE * ((number_of_event - 1) - event_number), &mut data)?;
         Ok(Some(Event::from_compact_u32(u32::from_be_bytes(data))?))
     }
 
-    pub fn set_event(&self, event: Event, number: u32) -> Result<(), ()> {
+
+    fn set_event(&self, event: Event, number: u32) -> Result<(), ()> {
         let data: [u8; 4] = event.to_compact_u32().to_be_bytes();
         self.storage
             .write_data_to_eeprom_blocking(EVENT_ADDR + EVENT_SIZE * number, &data)
     }
 
-    pub fn set_last_event(&self, event: Event) -> Result<(), ()> {
+    /*pub fn set_last_event(&self, event: Event) -> Result<(), ()> {
         let number = self.get_number_of_event()?;
         self.set_event(event, number - 1)
-    }
+    }*/
+
+
 
     pub fn add_new_event(&self, event: Event) -> Result<(), ()> {
         let number = self.get_number_of_event()?;
-        self.set_event(event, number)
+        self.set_event(event, number)?;
+        self.increment_number_of_event()
+    }
+
+    pub fn remove_last_event(&self) -> Result<(), ()> {
+        let number = self.get_number_of_event()?;
+        self.set_number_of_event(number-1)
+    }
+
+    pub fn clear_event_storage(&self) -> Result<(), ()> {
+        self.set_number_of_event(0)
     }
 
     pub fn get_number_of_event(&self) -> Result<u32, ()> {
@@ -66,13 +87,13 @@ where
         Ok(u32::from_be_bytes(data))
     }
 
-    pub fn set_number_of_event(&self, number: u32) -> Result<(), ()> {
+    fn set_number_of_event(&self, number: u32) -> Result<(), ()> {
         let data: [u8; 4] = number.to_be_bytes();
         self.storage
             .write_data_to_eeprom_blocking(NUM_OF_EVENT_ADDR, &data)
     }
 
-    pub fn increment_number_of_event(&mut self) -> Result<(), ()> {
+    fn increment_number_of_event(&mut self) -> Result<(), ()> {
         let number = self.get_number_of_event()?;
         self.set_number_of_event(number + 1)
     }

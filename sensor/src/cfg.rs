@@ -1,0 +1,1 @@
+const MIN_OFF_TIME : i64 = 30;

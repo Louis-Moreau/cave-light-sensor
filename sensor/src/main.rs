@@ -8,8 +8,8 @@ use panic_abort as _;
 mod light_sensor;
 mod rtc;
 mod storage;
+mod cfg;
 mod tasks;
-use eeprom24x::{Eeprom24x, SlaveAddr};
 use light_sensor::*;
 use opt300x::Opt300x;
 use rtic::app;
@@ -34,12 +34,14 @@ mod app {
     use stm32l0xx_hal::{pac::LPUART1, serial::Serial};
     use tasks::{LightInterruptState, UartInterruptState};
 
+    use self::storage::event_storage::EventStorage;
+
     use super::*;
 
     #[shared]
     struct Shared {
         speedy: bool,
-        //eeprom: MyEeprom,
+        storage:  EventStorage<shared_bus::I2cProxy<'static, cortex_m::interrupt::Mutex<core::cell::RefCell<I2c<I2C1, PB7<Output<OpenDrain>>, PB6<Output<OpenDrain>>>>>>>,
         rtc: Rtc,
     }
 
@@ -94,7 +96,8 @@ mod app {
         );
 
         let mut shared_i2c  = shared_bus::new_cortexm!(I2c<I2C1, PB7<Output<OpenDrain>>, PB6<Output<OpenDrain>>> = i2c).unwrap();
-        let eeprom = Eeprom24x::new_24x256(shared_i2c.acquire_i2c(), SlaveAddr::default());
+        let storage = EventStorage::new(shared_i2c.acquire_i2c());
+        
 
         let sensor = Opt300x::new_opt3001(
             shared_i2c.acquire_i2c(),
@@ -126,7 +129,7 @@ mod app {
         blink::spawn().ok();
 
         (
-            Shared { speedy: false, rtc },
+            Shared { speedy: false,storage, rtc },
             Local {
                 light_int_state: LightInterruptState {
                     interrupt_pin: interrupt_pin,
@@ -158,7 +161,7 @@ mod app {
         }
     }
 
-    #[task(binds = EXTI0_1, local = [light_int_state], shared = [speedy,rtc])]
+    #[task(binds = EXTI0_1, local = [light_int_state], shared = [speedy,storage,rtc])]
     fn exti0_1(ctx: exti0_1::Context) {}
 
     #[task(binds = AES_RNG_LPUART1, local = [], shared = [rtc])]
