@@ -8,7 +8,7 @@ cortex-m = { version ="0.7.7", features = ["critical-section-single-core"]}
 #cortex-m-rt = "0.7.3"
 embedded-hal = "0.2.7"
 #panic-rtt-target = { version = "0.1.2", features = ["cortex-m"] }
-#rtt-target = { version = "0.4.0" }
+rtt-target = { version = "0.5.0" }
 rtic = { version = "2.0.1", features = ["thumbv6-backend"]}
 rtic-monotonics = { version = "1.5.0", features = ["cortex-m-systick"]}
 stm32l0xx-hal = { version = "0.10.0", features = [ "mcu-STM32L011K4Tx"] }

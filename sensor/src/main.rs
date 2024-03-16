@@ -5,10 +5,10 @@
 
 use panic_abort as _;
 
+mod cfg;
 mod light_sensor;
 mod rtc;
 mod storage;
-mod cfg;
 mod tasks;
 use light_sensor::*;
 use opt300x::Opt300x;
@@ -35,13 +35,19 @@ mod app {
     use tasks::{LightInterruptState, UartInterruptState};
 
     use self::storage::event_storage::EventStorage;
-
     use super::*;
 
     #[shared]
     struct Shared {
         speedy: bool,
-        storage:  EventStorage<shared_bus::I2cProxy<'static, cortex_m::interrupt::Mutex<core::cell::RefCell<I2c<I2C1, PB7<Output<OpenDrain>>, PB6<Output<OpenDrain>>>>>>>,
+        storage: EventStorage<
+            shared_bus::I2cProxy<
+                'static,
+                cortex_m::interrupt::Mutex<
+                    core::cell::RefCell<I2c<I2C1, PB7<Output<OpenDrain>>, PB6<Output<OpenDrain>>>>,
+                >,
+            >,
+        >,
         rtc: Rtc,
     }
 
@@ -97,7 +103,6 @@ mod app {
 
         let mut shared_i2c  = shared_bus::new_cortexm!(I2c<I2C1, PB7<Output<OpenDrain>>, PB6<Output<OpenDrain>>> = i2c).unwrap();
         let storage = EventStorage::new(shared_i2c.acquire_i2c());
-        
 
         let sensor = Opt300x::new_opt3001(
             shared_i2c.acquire_i2c(),
@@ -129,7 +134,11 @@ mod app {
         blink::spawn().ok();
 
         (
-            Shared { speedy: false,storage, rtc },
+            Shared {
+                speedy: false,
+                storage,
+                rtc,
+            },
             Local {
                 light_int_state: LightInterruptState {
                     interrupt_pin: interrupt_pin,
