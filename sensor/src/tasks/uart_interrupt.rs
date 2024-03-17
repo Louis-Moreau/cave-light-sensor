@@ -1,4 +1,5 @@
 use chrono::NaiveDateTime;
+use common_data::{request::{Request, MAX_REQUEST_SIZE}, response::Response};
 use link_lib::*;
 use nb::block;
 use rtic::Mutex;
@@ -8,19 +9,27 @@ use stm32l0xx_hal::{
     serial::*,
 };
 
-use crate::app::uart0;
+use crate::{app::uart0, cfg::UART_SLEEP_DELAY};
+
+pub struct LocalUartState {
+    last_message_ts : i64,
+    message_buffer : link_lib::Link<_,Request,Response,MAX_REQUEST_SIZE>
+}
+
+
 
 pub fn uart_interrupt(mut ctx: uart0::Context) {
     if Exti::is_pending(DirectLine::Lpuart1) {
         //let state = ctx.local.uart_int_state;
-        let now = ctx.shared.rtc.lock(|r| r.now().timestamp() as u32);
-        let delta_time = now - ctx.local.uart_int_state.last_timestamp;
-        ctx.local.uart_int_state.last_timestamp = now;
+        let now = ctx.shared.rtc.lock(|r| r.now().timestamp());
+        let delta_time = now - ctx.local.uart_state.last_message_ts;
+        ctx.local.uart_state.last_message_ts = now;
 
-        // Clear buffer if we haven't received a byte for more than 3s, this is needed because we
+
+        // Clear buffer if we haven't received a byte for more than UART_SLEEP_DELAY secs, this is needed because we
         // need to clear the buffer if we receive a corrupted message without a null byte at the end
-        if delta_time > 3 {
-            ctx.local.uart_int_state.message_buffer.clear_buffer();
+        if delta_time > UART_SLEEP_DELAY {
+            ctx.local.uart_state.message_buffer.clear_buffer();
         }
 
         while ctx.local.uart_int_state.uart_rx.is_rx_not_empty() {

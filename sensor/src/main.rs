@@ -32,7 +32,8 @@ const GPIO_LINE: u8 = 0;
 mod app {
     use link_lib::Link;
     use stm32l0xx_hal::{pac::LPUART1, serial::Serial};
-    use tasks::{LightInterruptState, UartInterruptState};
+   use crate::tasks::light_interrupt::LocalLightInterruptState;
+   use crate::tasks::uart_interrupt::LocalUartState;
 
     use self::storage::event_storage::EventStorage;
     use super::*;
@@ -55,7 +56,8 @@ mod app {
     struct Local {
         led: PB3<Output<PushPull>>,
         state: bool,
-        light_int_state: LightInterruptState,
+        light_state: LocalLightInterruptState,
+        uart_state : LocalUartState,
     }
 
     #[init]
@@ -140,7 +142,7 @@ mod app {
                 rtc,
             },
             Local {
-                light_int_state: LightInterruptState {
+                light_state: LocalLightInterruptState {
                     interrupt_pin: interrupt_pin,
                     sensor: sensor,
                 },
@@ -170,9 +172,9 @@ mod app {
         }
     }
 
-    #[task(binds = EXTI0_1, local = [light_int_state], shared = [speedy,storage,rtc])]
+    #[task(binds = EXTI0_1, local = [light_state], shared = [speedy,storage,rtc])]
     fn exti0_1(ctx: exti0_1::Context) {}
 
-    #[task(binds = AES_RNG_LPUART1, local = [], shared = [rtc])]
+    #[task(binds = AES_RNG_LPUART1, local = [uart_state], shared = [rtc])]
     fn uart0(ctx: uart0::Context) {}
 }

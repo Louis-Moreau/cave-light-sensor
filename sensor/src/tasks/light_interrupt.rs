@@ -13,12 +13,17 @@ use crate::{
     GPIO_LINE,
 };
 
+pub struct LocalLightInterruptState {
+    pub interrupt_pin: PB0<Input<Floating>>,
+    pub sensor: light_sensor::MyOpt3001,
+}
+
 pub fn light_interrupt(mut ctx: exti0_1::Context) {
     if Exti::is_pending(GpioLine::from_raw_line(GPIO_LINE).unwrap()) {
         Exti::unpend(GpioLine::from_raw_line(GPIO_LINE).unwrap());
         debug_rprintln!("Interrupt");
 
-        let state = ctx.local.light_int_state;
+        let state = ctx.local.light_state;
         let now_timestamp = ctx.shared.rtc.lock(|r| r.now().timestamp());
 
         // let mut light_detected: bool = false;
@@ -45,9 +50,4 @@ pub fn light_interrupt(mut ctx: exti0_1::Context) {
             });
         }
     }
-}
-
-pub struct LightInterruptState {
-    pub interrupt_pin: PB0<Input<Floating>>,
-    pub sensor: light_sensor::MyOpt3001,
 }
