@@ -4,18 +4,18 @@ use heapless::Vec;
 use postcard::{accumulator::CobsAccumulator, experimental::max_size::MaxSize};
 use crate::error::MyError;
 
-pub struct Link<S,REQ,RESP,const SIZE : usize> {
+pub struct Link<S,INPUT,OUTPUT,const SIZE : usize> {
     serial: S,
     buffer : CobsAccumulator<SIZE>,
-    phantom_req: PhantomData<REQ>,
-    phantom_resp: PhantomData<RESP>
+    phantom_req: PhantomData<INPUT>,
+    phantom_resp: PhantomData<OUTPUT>
 }
 
-impl<'a, S,REQ,RESP,const SIZE : usize> Link<S,REQ,RESP,SIZE>
+impl<'a, S,INPUT,OUTPUT,const SIZE : usize> Link<S,INPUT,OUTPUT,SIZE>
 where
     S: embedded_hal::serial::Read<u8> + embedded_hal::blocking::serial::Write<u8>,
-    REQ :  for<'de> serde::Deserialize<'de> + MaxSize,
-    RESP : serde::Serialize
+    INPUT :  for<'de> serde::Deserialize<'de> + MaxSize,
+    OUTPUT : serde::Serialize
 {
     pub fn new(serial: S) -> Self {
         Self {
@@ -26,7 +26,7 @@ where
         }
     }
 
-    pub fn send_response(&mut self,response : &RESP) -> Result<(), MyError<<S as embedded_hal::blocking::serial::Write<u8>>::Error>> {
+    pub fn send_response(&mut self,response : &OUTPUT) -> Result<(), MyError<<S as embedded_hal::blocking::serial::Write<u8>>::Error>> {
         let vec: Vec<u8, SIZE> = postcard::to_vec_cobs(&response).map_err(|_|MyError::Serialize)?;
 
         self.serial.bwrite_all(&vec).map_err(|e|MyError::IO(e))?;
@@ -34,10 +34,10 @@ where
         Ok(())
     }
 
-    pub fn get_request(&mut self) -> Result<Option<REQ>, MyError<<S as embedded_hal::serial::Read<u8>>::Error>> {
+    pub fn get_request(&mut self) -> Result<Option<INPUT>, MyError<<S as embedded_hal::serial::Read<u8>>::Error>> {
         let byte = nb::block!(self.serial.read()).map_err(|e|MyError::IO(e))?;
 
-       match self.buffer.feed::<REQ>(&[byte]) {
+       match self.buffer.feed::<INPUT>(&[byte]) {
             postcard::accumulator::FeedResult::Consumed => Ok(None),
             postcard::accumulator::FeedResult::OverFull(_) => Err(MyError::BufferFull),
             postcard::accumulator::FeedResult::DeserError(_) => Err(MyError::Deserialize),
