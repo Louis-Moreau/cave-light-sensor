@@ -6,6 +6,6 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-iced = { version = "0.10.0", features = ["tokio"] }
-serial2-tokio = { version = "0.1.8", features = ["unix"] }
-tokio = { version = "1.35.1", features = ["macros"] }
+iced = { version = "0.12.1", features = ["tokio"] }
+serial2-tokio = { version = "0.1.9", features = ["unix"] }
+tokio = { version = "1.37.0", features = ["macros"] }
